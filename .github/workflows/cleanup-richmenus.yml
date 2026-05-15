@@ -1,0 +1,111 @@
+name: Cleanup rich menus + force set default
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      RICH_MENU_NAME: 'Pop Monster · MENU (postback v1)'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cleanup rich menus
+        env:
+          LINE_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p _debug/cleanup
+
+          echo "=== 1. List all current rich menus ==="
+          curl -sS -H "Authorization: Bearer $LINE_TOKEN" \
+            https://api.line.me/v2/bot/richmenu/list \
+            > _debug/cleanup/before.json
+          jq '.richmenus[] | {id: .richMenuId, name, selected}' _debug/cleanup/before.json
+
+          echo
+          echo "=== 2. Identify keeper (last matching $RICH_MENU_NAME) ==="
+          mapfile -t OURS < <(jq -r --arg n "$RICH_MENU_NAME" \
+            '.richmenus[] | select(.name == $n) | .richMenuId' _debug/cleanup/before.json)
+          if [ ${#OURS[@]} -eq 0 ]; then
+            echo "::error::No rich menu with name '$RICH_MENU_NAME' found. Re-run deploy.yml first."
+            exit 1
+          fi
+          KEEP="${OURS[-1]}"
+          echo "KEEP=$KEEP"
+          echo "KEEP=$KEEP" >> $GITHUB_ENV
+          echo "$KEEP" > _debug/cleanup/keep-id.txt
+
+          echo
+          echo "=== 3. Verify keeper has binary uploaded ==="
+          set +e
+          http=$(curl -sS -X GET \
+            "https://api-data.line.me/v2/bot/richmenu/${KEEP}/content" \
+            -H "Authorization: Bearer $LINE_TOKEN" \
+            -o /tmp/probe-binary -w "%{http_code}")
+          set -e
+          echo "GET binary HTTP $http"
+          if [ "$http" = "200" ]; then
+            echo "binary exists ($(wc -c < /tmp/probe-binary) bytes)"
+          else
+            echo "::warning::keeper $KEEP has no binary (http=$http). Uploading..."
+            curl -sS -f -X POST \
+              "https://api-data.line.me/v2/bot/richmenu/${KEEP}/content" \
+              -H "Authorization: Bearer $LINE_TOKEN" \
+              -H "Content-Type: image/jpeg" \
+              --data-binary @assets/exports/pop-monster-richmenu-2500x1686.jpg
+            echo "upload OK"
+          fi
+
+          echo
+          echo "=== 4. Delete all OTHER rich menus ==="
+          mapfile -t ALL_IDS < <(jq -r '.richmenus[].richMenuId' _debug/cleanup/before.json)
+          for id in "${ALL_IDS[@]}"; do
+            if [ "$id" = "$KEEP" ]; then
+              echo "(keeping $id)"
+              continue
+            fi
+            echo "Deleting $id"
+            set +e
+            curl -sS -X DELETE \
+              "https://api.line.me/v2/bot/richmenu/$id" \
+              -H "Authorization: Bearer $LINE_TOKEN" -o /dev/null -w "  HTTP %{http_code}\n"
+            set -e
+          done
+
+          echo
+          echo "=== 5. Set keeper as default (Python requests, no data arg — defeats Akamai 411) ==="
+          pip install --quiet requests
+          python3 - <<'PY'
+          import os, sys, requests
+          rm_id = os.environ['KEEP']
+          token = os.environ['LINE_TOKEN']
+          r = requests.post(
+              f'https://api.line.me/v2/bot/user/all/richmenu/{rm_id}',
+              headers={'Authorization': f'Bearer {token}'},
+              timeout=15,
+          )
+          print(f'HTTP {r.status_code}: {r.text}')
+          if r.status_code != 200:
+              sys.exit(f'set-default failed: {r.status_code} {r.text}')
+          PY
+
+          echo
+          echo "=== 6. Final list ==="
+          curl -sS -H "Authorization: Bearer $LINE_TOKEN" \
+            https://api.line.me/v2/bot/richmenu/list \
+            | jq '.richmenus[] | {id: .richMenuId, name, selected}'
+
+          echo
+          echo "=== 7. Current default ==="
+          curl -sS -H "Authorization: Bearer $LINE_TOKEN" \
+            https://api.line.me/v2/bot/user/all/richmenu
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Cleanup complete" >> $GITHUB_STEP_SUMMARY
+          echo "Kept: \`${{ env.KEEP }}\`" >> $GITHUB_STEP_SUMMARY
