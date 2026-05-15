@@ -1,0 +1,41 @@
+{
+  "rendered_at": "2026-05-15T16:52:23.319Z",
+  "files": {
+    "pop-monster-avatar-640.png": {
+      "bytes": 40283,
+      "sha256_16": "016e5f7fb6e5c43a"
+    },
+    "pop-monster-cover-bowl-1080x878.png": {
+      "bytes": 848061,
+      "sha256_16": "bfe79c825a3d4a22"
+    },
+    "pop-monster-richmenu-2500x1686.png": {
+      "bytes": 1141741,
+      "sha256_16": "af8b46f00f023bb5"
+    },
+    "pop-monster-welcome-card-1040.png": {
+      "bytes": 741649,
+      "sha256_16": "a60a8a4f31ecf1b1"
+    },
+    "pop-monster-chat-bg-1080x2340.jpg": {
+      "bytes": 84976,
+      "sha256_16": "4598c599a2e4dd47"
+    },
+    "pop-monster-carousel-01-1040.png": {
+      "bytes": 1099648,
+      "sha256_16": "692540f47eff033d"
+    },
+    "pop-monster-carousel-02-1040.png": {
+      "bytes": 1018959,
+      "sha256_16": "57c9ca3c848f7b0d"
+    },
+    "pop-monster-carousel-03-1040.png": {
+      "bytes": 753729,
+      "sha256_16": "983441c862152c10"
+    },
+    "pop-monster-carousel-04-1040.png": {
+      "bytes": 1031317,
+      "sha256_16": "0a8a3b4da7af82e3"
+    }
+  }
+}
