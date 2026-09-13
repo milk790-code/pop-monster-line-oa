@@ -44,18 +44,17 @@ Steps the user (account owner) does manually:
    - `CF_API_TOKEN` (Cloudflare API token, same as 3Q if sharing account)
    - `CF_ACCOUNT_ID` (Cloudflare account ID, same as 3Q)
    - `LINE_CHANNEL_ACCESS_TOKEN` (new, from step 1)
-   - `LINE_CHANNEL_SECRET` (new, from step 1)
-   - `ANTHROPIC_API_KEY` (optional but recommended; sign up at https://console.anthropic.com)
+   - Worker secrets (`LINE_CHANNEL_ACCESS_TOKEN`, `LINE_CHANNEL_SECRET`, `ANTHROPIC_API_KEY`) are set on Cloudflare with `wrangler secret put`; the deploy keeps them and does not send them (see `webhook/README.md`)
 
 4. **GitHub Pages**: Settings → Pages → Source = `main` branch, root → save (serves `assets/exports/*.png` for the Worker to reference).
 
 ## Phase 1 — Deploy
 
-Push to `main`. Three workflows fire automatically:
+Push to `main`. Depending on which files changed, these workflows run:
 
 1. **Render PNG assets** — Playwright renders all 9 export HTMLs to `assets/exports/*.png`, compresses richmenu to JPEG
-2. **Deploy Pop Monster LINE OA** — chains from render: uploads Worker, creates rich menu, uploads binary, sets default, configures webhook URL
-3. **Daily healthcheck** — cron pings Worker daily
+2. **Deploy Pop Monster LINE OA** — uploads the Worker. A push never touches LINE. Manual runs and runs after Render re-apply the rich menu and webhook URL only when LINE already sends this OA's events to this Worker; `take_over_line` switches it on purpose (see `webhook/README.md`)
+3. **Daily healthcheck** — pings the Worker once a day on a schedule (not on push)
 
 ## Phase 1 — Post-deploy manual steps
 
@@ -76,7 +75,7 @@ Things LINE has no API for:
 
 ## Phase 1.5 — Brand asset swap (when you're ready)
 
-Edit `ui_kits/line_oa/LineSpecs.js` + replace `assets/photography/*.svg` with real product photos. Push to `main`. The render pipeline auto-refreshes everything.
+Edit `ui_kits/line_oa/LineSpecs.js` + replace `assets/photography/*.svg` with real product photos. Push to `main`. The render pipeline refreshes the PNGs. A new rich menu image does not reach LINE this way: LINE cannot replace the image of an existing rich menu, and the deploy reuses the menu by name.
 
 ## Worker behavior summary
 
