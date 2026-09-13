@@ -174,6 +174,13 @@ export default {
     const valid = await verifySignature(body, signature, env.LINE_CHANNEL_SECRET);
     if (!valid) return new Response('Invalid signature', { status: 401 });
 
+    // LINE allows only one webhook URL per official account. To let a second
+    // system (L Harness CRM) observe the same events, fan the verified payload
+    // out to it. Fire-and-forget: this worker stays the only replier, and a slow
+    // or broken downstream can never delay or fail the customer-facing reply.
+    // No-op unless HARNESS_WEBHOOK_URL is set, so shipping this is not enabling it.
+    ctx.waitUntil(fanOutToHarness(body, signature, env));
+
     let payload;
     try { payload = JSON.parse(body); } catch { return new Response('Bad JSON', { status: 400 }); }
 
@@ -184,6 +191,47 @@ export default {
     return new Response('OK', { status: 200 });
   },
 };
+
+// =============================================================================
+// Webhook fan-out (L Harness CRM)
+// =============================================================================
+
+const HARNESS_TIMEOUT_MS = 5000;
+
+/**
+ * Relay an already signature-verified LINE webhook payload to a second consumer.
+ *
+ * Contract with the caller:
+ *   - `body` must be the exact string returned by request.text(). Re-serialising
+ *     the parsed JSON would change the bytes and invalidate the HMAC downstream.
+ *   - Only ever called via ctx.waitUntil, never awaited on the response path.
+ *   - Never throws. Every failure mode is swallowed and logged, because LINE
+ *     disables a webhook that stops answering 200.
+ *
+ * The downstream is expected to verify `x-line-signature` itself against the
+ * same channel secret, and must not reply to events — replyToken is single-use
+ * and belongs to this worker.
+ */
+async function fanOutToHarness(body, signature, env) {
+  const url = env.HARNESS_WEBHOOK_URL;
+  if (!url) return; // feature off — default state
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-line-signature': signature,
+        'User-Agent': 'pop-monster-webhook/fanout',
+      },
+      body,
+      signal: AbortSignal.timeout(HARNESS_TIMEOUT_MS),
+    });
+    if (!res.ok) console.error('harness fan-out non-ok', res.status);
+  } catch (e) {
+    console.error('harness fan-out failed', String(e));
+  }
+}
 
 // =============================================================================
 // Event routing
