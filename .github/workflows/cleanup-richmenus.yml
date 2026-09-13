@@ -13,6 +13,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # This workflow deletes every other rich menu on the OA and changes the
+      # default menu for every customer. Since 2026-06 the OA (@150tiznd) is
+      # served by pop-line-oa, whose menus it would delete, so it refuses to run
+      # unless LINE sends the OA's events to pop-monster-webhook.
+      - name: Refuse unless LINE uses pop-monster-webhook (read-only)
+        env:
+          LINE_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          if ! ep=$(curl -sS --fail -H "Authorization: Bearer $LINE_TOKEN" https://api.line.me/v2/bot/channel/webhook/endpoint); then
+            echo "::error::Could not read the LINE webhook endpoint; stopped before touching any rich menu"
+            exit 1
+          fi
+          endpoint=$(echo "$ep" | jq -r '.endpoint // ""')
+          active=$(echo "$ep" | jq -r '.active // false')
+          case "${endpoint%/}" in
+            https://pop-monster-webhook.*.workers.dev) ours=true ;;
+            *) ours=false ;;
+          esac
+          if [ "$ours" != "true" ] || [ "$active" != "true" ]; then
+            echo "::error::LINE sends this OA's events to ${endpoint:-(none)} (active=$active), not to pop-monster-webhook. This cleanup would delete that bot's rich menus and change the menu every customer sees. Stopped; nothing was changed."
+            exit 1
+          fi
+          echo "::notice::LINE sends this OA's events to $endpoint"
+
       - name: Cleanup rich menus
         env:
           LINE_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
@@ -107,5 +132,5 @@ jobs:
       - name: Summary
         if: always()
         run: |
-          echo "## Cleanup complete" >> $GITHUB_STEP_SUMMARY
+          echo "## Cleanup: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
           echo "Kept: \`${{ env.KEEP }}\`" >> $GITHUB_STEP_SUMMARY
